@@ -1,6 +1,6 @@
 # Third-party components
 
-This project is MIT-licensed (see `LICENSE`). It uses and/or redistributes the components below. They are
+This project (developed by Arniel D. Montero) is MIT-licensed (see `LICENSE`). It uses and/or redistributes the components below. They are
 **not** owned by this project and remain under their own licenses. License identifiers were taken from the
 package metadata / license files of the exact versions used while building (checked 2026-10-02).
 

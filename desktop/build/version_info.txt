@@ -1,8 +1,8 @@
 # UTF-8
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 0, 0, 0),
-    prodvers=(1, 0, 0, 0),
+    filevers=(1, 1, 0, 0),
+    prodvers=(1, 1, 0, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -14,14 +14,14 @@ VSVersionInfo(
     StringFileInfo([
       StringTable(
         '040904B0',
-        [StringStruct('CompanyName', 'YouTube Downloader'),
+        [StringStruct('CompanyName', 'Arniel D. Montero'),
          StringStruct('FileDescription', 'YouTube Downloader'),
-         StringStruct('FileVersion', '1.0.0.0'),
+         StringStruct('FileVersion', '1.1.0.0'),
          StringStruct('InternalName', 'YouTubeDownloader'),
-         StringStruct('LegalCopyright', 'MIT License. Bundles yt-dlp, FFmpeg, Deno, Qt for Python (LGPL).'),
+         StringStruct('LegalCopyright', 'Developed by Arniel D. Montero. MIT License. Bundles yt-dlp, FFmpeg, Deno, Qt for Python (LGPL).'),
          StringStruct('OriginalFilename', 'YouTubeDownloader.exe'),
          StringStruct('ProductName', 'YouTube Downloader'),
-         StringStruct('ProductVersion', '1.0.0.0')])
+         StringStruct('ProductVersion', '1.1.0.0')])
     ]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])
   ]

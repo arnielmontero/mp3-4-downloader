@@ -12,7 +12,7 @@ namespace App\Config;
  */
 final class AppConfig
 {
-    public const VERSION = '1.0.0';
+    public const VERSION = '1.1.0';
 
     public string $appEnv;
     public string $storagePath;

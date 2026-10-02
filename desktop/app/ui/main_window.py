@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import APP_NAME
+from .. import APP_NAME, AUTHOR
 from ..core import file_service, logging_service, paths
 from ..core.media_downloader import SearchResult
 from ..core.settings_service import SettingsService
@@ -131,6 +131,10 @@ class MainWindow(QMainWindow):
         folder.addWidget(self.folder_input, 1)
         folder.addWidget(self.browse_button)
         root.addLayout(folder)
+        credit = QLabel(f"{APP_NAME} · Developed by {AUTHOR}")
+        credit.setObjectName("creditLabel")
+        credit.setStyleSheet("color: palette(mid); font-size: 10px;")
+        root.addWidget(credit)
         return page
 
     def _build_sidebar(self) -> QWidget:

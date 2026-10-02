@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import APP_NAME, __version__
+from .. import APP_NAME, AUTHOR, __version__
 from ..core.security import BITRATES, QUALITIES
 from ..core.settings_service import SettingsService
 from ..core.youtube_service import YouTubeService
@@ -105,7 +105,7 @@ class AboutDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(f"About {APP_NAME}")
         self.setMinimumWidth(360)
-        self.title = QLabel(f"<h3>{APP_NAME}</h3>Version {__version__}")
+        self.title = QLabel(f"<h3>{APP_NAME}</h3>Version {__version__}<br>Developed by {AUTHOR}")
         self.engine = QLabel("Media engine:\nyt-dlp ...")
         self.engine.setObjectName("aboutEngine")
         self.ffmpeg = QLabel("FFmpeg:\n...")

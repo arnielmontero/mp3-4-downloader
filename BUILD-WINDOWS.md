@@ -77,3 +77,12 @@ Outputs: `dist\YouTubeDownloader.exe` (+ `dist\bin\` with the media binaries) an
 * One-file build: Windows SmartScreen/antivirus may warn about an unsigned, self-extracting EXE. Sign it with your certificate
   (`signtool sign /fd SHA256 /tr <timestamp-url> dist\YouTubeDownloader.exe`) for distribution.
 * FFmpeg (GPL build) and the other bundled components keep their licenses — see `THIRD-PARTY-NOTICES.md`.
+
+## Upgrading an existing installation
+
+Run the new `YouTubeDownloader-Setup.exe` over an installed copy: it keeps the same install folder, closes a running copy,
+replaces the program and the whole `bin\` folder (no stale files from the old version) and updates the Apps & features entry.
+Settings and logs in `%APPDATA%\YouTubeDownloader` are kept. The wizard says "Setup will update ... from version X to Y"; installing an older
+version over a newer one asks for confirmation (silent installs refuse). Bump the version in `desktop/app/__init__.py`,
+`desktop/installer/YouTubeDownloader.iss` (`AppVersion`) and `desktop/build/version_info.txt` for every release; never change the `AppId`.
+Tested: 1.0.0 (running, with a stale file in `bin\`) upgraded silently to 1.1.0; settings kept, stale file removed, new version self-test OK.

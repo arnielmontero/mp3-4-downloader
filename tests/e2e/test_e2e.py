@@ -107,7 +107,7 @@ class TestAvailability(unittest.TestCase):
     def test_04_about_reports_versions(self):
         _, doc, _ = client().json("GET", "/api/about")
         self.assertTrue(doc["success"])
-        self.assertEqual("1.0.0", doc["data"]["version"])
+        self.assertEqual("1.1.0", doc["data"]["version"])
         self.assertEqual("2099.01.01", doc["data"]["yt_dlp_version"])  # fake engine
         self.assertTrue(doc["data"]["ffmpeg_version"])
 

@@ -1,5 +1,7 @@
 # YouTube Downloader — Web + Windows EXE
 
+*Developed by Arniel D. Montero.*
+
 A self-hosted downloader for single YouTube videos with two front ends that share the same engine
 (**yt-dlp** + **FFmpeg**):
 
