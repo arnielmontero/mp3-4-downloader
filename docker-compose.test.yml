@@ -1,0 +1,31 @@
+# Test override: replaces yt-dlp with a deterministic fake so the end-to-end suite never needs YouTube.
+#
+#   WEB_PORT=18080 docker compose -p ytd-test -f docker-compose.yml -f docker-compose.test.yml up -d --build
+#   python tests/e2e/run_e2e.py http://localhost:18080
+#
+# Separate project name + volumes, tiny limits so the limit tests run quickly.
+
+x-test-environment: &test-environment
+  YTDLP_BIN: /fixtures/fake-yt-dlp
+  YTDLP_JS_RUNTIME: ""
+  MAX_CONCURRENT_DOWNLOADS: "2"
+  MAX_DOWNLOAD_SIZE_GB: "0.002"
+  MAX_VIDEO_DURATION_MINUTES: "60"
+  RATE_LIMIT_ANALYZE: "20"
+  RATE_LIMIT_DOWNLOAD: "5"
+  RATE_LIMIT_WINDOW_SECONDS: "60"
+  KILL_GRACE_SECONDS: "2"
+  CLEANUP_INTERVAL_SECONDS: "5"
+  DOWNLOAD_RETENTION_HOURS: "24"
+  INFO_CACHE_SECONDS: "600"
+  TRUST_PROXY_HEADERS: "true"   # lets each test client pick its own IP via X-Forwarded-For (rate-limit isolation)
+
+services:
+  app:
+    environment: *test-environment
+    volumes:
+      - ./tests/fixtures:/fixtures:ro
+  worker:
+    environment: *test-environment
+    volumes:
+      - ./tests/fixtures:/fixtures:ro

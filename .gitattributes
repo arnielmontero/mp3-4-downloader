@@ -1,0 +1,11 @@
+* text=auto
+*.sh text eol=lf
+*.php text eol=lf
+*.conf text eol=lf
+*.ini text eol=lf
+Dockerfile text eol=lf
+tests/fixtures/* text eol=lf
+*.bat text eol=crlf
+*.iss text eol=crlf
+*.png binary
+*.ico binary

@@ -1,0 +1,106 @@
+# YouTube Downloader - web stack.   docker compose up -d --build   ->   http://localhost:8080
+#
+#   web     nginx: static UI + reverse proxy to PHP-FPM, serves finished files via X-Accel-Redirect
+#   app     PHP-FPM + CodeIgniter 3 REST API
+#   worker  download worker (yt-dlp + FFmpeg), same image as `app`
+#
+# All settings come from environment variables; copy .env.example to .env to override defaults.
+
+x-app-environment: &app-environment
+  APP_ENV: ${APP_ENV:-production}
+  APP_URL: ${APP_URL:-http://localhost:8080}
+  MAX_CONCURRENT_DOWNLOADS: ${MAX_CONCURRENT_DOWNLOADS:-3}
+  MAX_DOWNLOAD_SIZE_GB: ${MAX_DOWNLOAD_SIZE_GB:-10}
+  MAX_VIDEO_DURATION_MINUTES: ${MAX_VIDEO_DURATION_MINUTES:-240}
+  DOWNLOAD_TIMEOUT_MINUTES: ${DOWNLOAD_TIMEOUT_MINUTES:-120}
+  DOWNLOAD_RETENTION_HOURS: ${DOWNLOAD_RETENTION_HOURS:-24}
+  COMPLETED_RETENTION_HOURS: ${COMPLETED_RETENTION_HOURS:-0}
+  LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-14}
+  RATE_LIMIT_ANALYZE: ${RATE_LIMIT_ANALYZE:-20}
+  RATE_LIMIT_DOWNLOAD: ${RATE_LIMIT_DOWNLOAD:-5}
+  RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
+  HISTORY_SCOPE: ${HISTORY_SCOPE:-client}
+  TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-false}
+  COOKIE_SECURE: ${COOKIE_SECURE:-}
+  YTDLP_JS_RUNTIME: ${YTDLP_JS_RUNTIME:-deno}
+  ACCEL_REDIRECT_PREFIX: /_protected_downloads
+
+x-app-build: &app-build
+  context: .
+  dockerfile: backend/Dockerfile
+  target: app
+  args:
+    YTDLP_VERSION: ${YTDLP_VERSION:-}
+
+x-hardening: &hardening
+  restart: unless-stopped
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  read_only: true
+  tmpfs:
+    - /tmp:size=256m,mode=1777
+
+services:
+  app:
+    <<: *hardening
+    image: youtube-downloader-app
+    build: *app-build
+    environment: *app-environment
+    volumes:
+      - youtube_downloads:/var/www/storage/downloads
+      - youtube_jobs:/var/www/storage/jobs
+      - youtube_logs:/var/www/storage/logs
+      - youtube_temp:/var/www/storage/temp
+    expose: ["9000"]
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M, pids: 200 }
+
+  worker:
+    <<: *hardening
+    image: youtube-downloader-app   # built by the `app` service
+    depends_on:
+      app: { condition: service_started }
+    command: ["php", "/var/www/backend/bin/worker.php"]
+    environment: *app-environment
+    volumes:
+      - youtube_downloads:/var/www/storage/downloads
+      - youtube_jobs:/var/www/storage/jobs
+      - youtube_logs:/var/www/storage/logs
+      - youtube_temp:/var/www/storage/temp
+    # SIGTERM -> worker stops accepting jobs, terminates children, cleans temp, re-queues running jobs
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "php", "/var/www/backend/bin/worker-health.php"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+    deploy:
+      resources:
+        limits: { cpus: "${WORKER_CPUS:-2.0}", memory: "${WORKER_MEMORY:-2G}", pids: 400 }
+
+  web:
+    <<: *hardening
+    image: youtube-downloader-web
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+    depends_on:
+      app: { condition: service_started }
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+    volumes:
+      - youtube_downloads:/var/www/storage/downloads:ro
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 128M, pids: 100 }
+
+volumes:
+  youtube_downloads:
+  youtube_jobs:
+  youtube_logs:
+  youtube_temp:

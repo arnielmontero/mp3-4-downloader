@@ -1,0 +1,126 @@
+#!/usr/bin/env php
+<?php
+/**
+ * Deterministic stand-in for yt-dlp used by the automated test-suite (no YouTube access needed).
+ *
+ * It understands just enough of the real command line (the same arguments YtDlpDownloader builds)
+ * and behaves according to the video id prefix, so tests can trigger every code path:
+ *
+ *   slow*  60 s download, with a child process (to verify process-group cancellation)
+ *   conc*  6 s download (queue / concurrency tests)
+ *   fail*  download exits with an HTTP 403
+ *   long*  duration 99999 s            -> VIDEO_TOO_LONG
+ *   big*   filesize 50 GB in the info  -> FILE_TOO_LARGE (rejected up front)
+ *   unsz*  no size in the info, streams data forever -> stopped by the size monitor
+ *   priv*  "Private video" error on analysis
+ *   live*  live stream
+ *   weird* title with characters that are illegal in filenames
+ *   other  fast 1 s download
+ *
+ * Every invocation is appended to /tmp/fake-ytdlp-calls.log (JSON lines) so tests can assert arguments.
+ */
+$args = array_slice($argv, 1);
+file_put_contents('/tmp/fake-ytdlp-calls.log', json_encode(['pid' => getmypid(), 'args' => $args]) . "\n", FILE_APPEND);
+
+if (in_array('--version', $args, true)) {
+    echo "2099.01.01\n";
+    exit(0);
+}
+
+$url = (string) end($args);
+preg_match('/v=([A-Za-z0-9_-]{11})/', $url, $m);
+$id = $m[1] ?? 'unknownvid1';
+
+$arg = static function (string $name) use ($args): ?string {
+    $i = array_search($name, $args, true);
+    return $i === false ? null : ($args[$i + 1] ?? null);
+};
+
+$isInfo = in_array('--print', $args, true);
+
+// ------------------------------------------------------------------ analysis
+if ($isInfo) {
+    if (str_starts_with($id, 'priv')) {
+        fwrite(STDERR, "ERROR: [youtube] $id: Private video. Sign in if you've been granted access to this video\n");
+        exit(1);
+    }
+    $title = str_starts_with($id, 'weird') ? 'My Video: Episode 1 / Test?' : "Fake video $id";
+    $duration = str_starts_with($id, 'long') ? 99999 : (str_starts_with($id, 'slow') ? 60 : 30);
+    $size = str_starts_with($id, 'big') ? 50 * 1024 ** 3 : (str_starts_with($id, 'unsz') ? null : 1024 * 1024);
+    $info = [
+        'id' => $id,
+        'title' => $title,
+        'uploader' => 'Fake Channel',
+        'channel' => 'Fake Channel',
+        'duration' => $duration,
+        'thumbnail' => "https://i.ytimg.com/vi/$id/hqdefault.jpg",
+        'is_live' => str_starts_with($id, 'live'),
+        'live_status' => str_starts_with($id, 'live') ? 'is_live' : 'not_live',
+        'webpage_url' => "https://www.youtube.com/watch?v=$id",
+        'filesize' => $size,
+        'filesize_approx' => null,
+    ];
+    $formats = [['format_id' => '140', 'ext' => 'm4a', 'height' => null, 'vcodec' => 'none', 'acodec' => 'mp4a.40.2', 'abr' => 129.5, 'filesize' => 500000]];
+    foreach ([144, 240, 360, 480, 720, 1080] as $h) {
+        $formats[] = ['format_id' => (string) $h, 'ext' => 'mp4', 'height' => $h, 'vcodec' => 'avc1.640028', 'acodec' => 'none', 'abr' => 0, 'filesize' => $h * 4000];
+    }
+    echo 'YTDINFO ' . json_encode($info) . "\n";
+    echo 'YTDFMT ' . json_encode($formats) . "\n";
+    exit(0);
+}
+
+// ------------------------------------------------------------------ download
+if (str_starts_with($id, 'fail')) {
+    fwrite(STDERR, "ERROR: unable to download video data: HTTP Error 403: Forbidden\n");
+    exit(1);
+}
+
+$template = $arg('-o') ?? '/tmp/%(id)s.%(ext)s';
+$outDir = dirname($template);
+$isMp3 = in_array('-x', $args, true);
+$ext = $isMp3 ? 'mp3' : 'mp4';
+$final = $outDir . '/' . $id . '.' . $ext;
+$partial = $outDir . '/' . $id . '.f137.mp4.part';
+$progress = static function (string $status, int $done, int $total, string $file): void {
+    echo sprintf("YTDP|%s|%d|%d|NA|%d|%s|%s\n", $status, $done, $total, 2097152, '1', $file);
+    flush();
+};
+
+$child = null;
+$steps = str_starts_with($id, 'slow') ? 120 : (str_starts_with($id, 'conc') ? 12 : 2);
+if (str_starts_with($id, 'slow')) {
+    // An FFmpeg-like grandchild that must die together with this process on cancel.
+    $child = proc_open(['sleep', '120'], [], $pipes);
+}
+$total = 1024 * 1024;
+$unsized = str_starts_with($id, 'unsz');
+$fh = fopen($partial, 'wb');
+for ($i = 1; $i <= $steps || $unsized; $i++) {
+    fwrite($fh, str_repeat('x', $unsized ? 262144 : (int) ($total / $steps)));
+    fflush($fh);
+    $done = $unsized ? $i * 262144 : (int) ($total * $i / $steps);
+    $progress('downloading', $done, $unsized ? 0 : $total, basename($partial));
+    usleep($unsized ? 100000 : 500000);
+}
+fclose($fh);
+$progress('finished', $total, $total, basename($partial));
+unlink($partial);
+
+echo "[Merger] Merging formats\n";
+flush();
+
+$ffmpeg = ['ffmpeg', '-y', '-loglevel', 'error'];
+if ($isMp3) {
+    $kbps = rtrim($arg('--audio-quality') ?? '192K', 'K');
+    $cmd = array_merge($ffmpeg, ['-f', 'lavfi', '-i', 'sine=frequency=440:duration=2', '-b:a', $kbps . 'k', '-metadata', 'title=Fake video ' . $id, '-metadata', 'artist=Fake Channel', $final]);
+} else {
+    $cmd = array_merge($ffmpeg, ['-f', 'lavfi', '-i', 'testsrc=size=320x240:rate=15:duration=2', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', $final]);
+}
+$p = proc_open($cmd, [2 => ['pipe', 'w']], $pipes);
+$err = stream_get_contents($pipes[2]);
+$code = proc_close($p);
+if ($code !== 0) {
+    fwrite(STDERR, "ERROR: Postprocessing: ffmpeg exited: $err\n");
+    exit(1);
+}
+exit(0);

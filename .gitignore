@@ -1,0 +1,46 @@
+# secrets / env
+.env
+*.pem
+*.key
+
+# runtime data
+storage/downloads/*
+storage/temp/*
+storage/jobs/*
+storage/logs/*
+!storage/**/.gitkeep
+
+# PHP
+backend/vendor/
+backend/.phpunit.cache/
+.phpunit.result.cache
+
+# media binaries (fetched by scripts, see BUILD-WINDOWS.md)
+media/bin/*
+media/yt-dlp/*
+media/ffmpeg/*
+!media/**/.gitkeep
+!media/README.md
+
+# Python / desktop
+__pycache__/
+*.pyc
+.venv/
+venv/
+desktop/.venv/
+desktop/build/work/
+desktop/build/spec/
+.pytest_cache/
+
+# build artifacts
+dist/
+installer/*.exe
+desktop/installer/Output/
+*.zip
+test-output/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

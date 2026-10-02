@@ -1,0 +1,2 @@
+# Runtime dependencies of the desktop application
+PySide6>=6.7,<7

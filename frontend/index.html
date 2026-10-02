@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>YouTube Downloader</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23d62839'/%3E%3Cpath d='M26 18v28l24-14z' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="assets/vendor/bootstrap.min.css">
+  <link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+  <a class="visually-hidden-focusable position-absolute p-2 bg-body" href="#main">Skip to main content</a>
+
+  <nav class="navbar navbar-expand border-bottom bg-body-tertiary">
+    <div class="container" style="max-width: 860px;">
+      <span class="navbar-brand fw-semibold">YouTube Downloader</span>
+      <ul class="navbar-nav ms-auto" id="mainTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link active" id="tab-download" data-bs-toggle="tab" data-bs-target="#pane-download" type="button" role="tab" aria-controls="pane-download" aria-selected="true">Downloader</button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="tab-history" data-bs-toggle="tab" data-bs-target="#pane-history" type="button" role="tab" aria-controls="pane-history" aria-selected="false">History</button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="tab-about" data-bs-toggle="tab" data-bs-target="#pane-about" type="button" role="tab" aria-controls="pane-about" aria-selected="false">Help</button>
+        </li>
+      </ul>
+    </div>
+  </nav>
+
+  <main id="main" class="container py-4" style="max-width: 860px;">
+    <div class="tab-content">
+
+      <!-- ===================== Downloader ===================== -->
+      <section class="tab-pane fade show active" id="pane-download" role="tabpanel" aria-labelledby="tab-download" tabindex="0">
+        <h1 class="h3 mb-3">YouTube Downloader</h1>
+
+        <form id="analyzeForm" class="card card-body mb-3" novalidate>
+          <label for="urlInput" class="form-label fw-semibold">Paste YouTube URL</label>
+          <div class="input-group">
+            <input id="urlInput" name="url" type="url" class="form-control form-control-lg" inputmode="url" autocomplete="off" spellcheck="false"
+                   placeholder="https://www.youtube.com/watch?v=..." aria-describedby="urlHelp urlError" required maxlength="2048">
+            <button id="analyzeBtn" class="btn btn-primary btn-lg" type="submit">
+              <span class="spinner-border spinner-border-sm d-none" aria-hidden="true"></span>
+              <span class="label">Analyze</span>
+            </button>
+          </div>
+          <div id="urlHelp" class="form-text">Only single YouTube videos are supported. Download content you are allowed to download.</div>
+          <div id="urlError" class="alert alert-danger mt-3 mb-0 d-none" role="alert"></div>
+        </form>
+
+        <!-- Media information + options -->
+        <form id="optionsForm" class="card mb-3 d-none" novalidate>
+          <div class="row g-0">
+            <div class="col-md-5">
+              <img id="thumb" class="img-fluid rounded-start w-100 h-100 thumb" alt="" referrerpolicy="no-referrer" hidden>
+            </div>
+            <div class="col-md-7">
+              <div class="card-body">
+                <dl class="mb-3 info-list">
+                  <dt>Title</dt><dd id="infoTitle" class="fw-semibold"></dd>
+                  <dt>Duration</dt><dd id="infoDuration"></dd>
+                  <dt>Uploader</dt><dd id="infoUploader"></dd>
+                </dl>
+
+                <fieldset class="mb-3">
+                  <legend class="form-label fs-6 fw-semibold">Available format</legend>
+                  <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="format" id="fmtMp4" value="mp4" checked>
+                    <label class="form-check-label" for="fmtMp4">MP4 (video)</label>
+                  </div>
+                  <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="format" id="fmtMp3" value="mp3">
+                    <label class="form-check-label" for="fmtMp3">MP3 (audio)</label>
+                  </div>
+                </fieldset>
+
+                <div id="qualityGroup" class="mb-3">
+                  <label for="qualitySelect" class="form-label fw-semibold">Video quality</label>
+                  <select id="qualitySelect" class="form-select"></select>
+                  <div class="form-text">"Best available" prefers H.264/AAC for maximum compatibility.</div>
+                </div>
+
+                <div id="bitrateGroup" class="mb-3 d-none">
+                  <label for="bitrateSelect" class="form-label fw-semibold">Audio quality</label>
+                  <select id="bitrateSelect" class="form-select">
+                    <option value="128">128 kbps</option>
+                    <option value="192" selected>192 kbps (default)</option>
+                    <option value="256">256 kbps</option>
+                    <option value="320">320 kbps</option>
+                  </select>
+                  <div id="bitrateNote" class="form-text"></div>
+                </div>
+
+                <button id="downloadBtn" class="btn btn-success btn-lg" type="submit">Download</button>
+              </div>
+            </div>
+          </div>
+        </form>
+
+        <!-- Progress / status -->
+        <section id="progressCard" class="card card-body mb-3 d-none" aria-labelledby="progressHeading">
+          <h2 id="progressHeading" class="h5">Progress</h2>
+          <div class="progress mb-2" style="height: 1.5rem;">
+            <div id="progressBar" class="progress-bar" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" style="width: 0%">0%</div>
+          </div>
+          <p class="mb-1"><strong>Status:</strong> <span id="statusText" role="status" aria-live="polite">Waiting...</span></p>
+          <p id="statsText" class="text-body-secondary small mb-3"></p>
+          <div class="d-flex gap-2 flex-wrap">
+            <button id="cancelBtn" class="btn btn-outline-danger" type="button">Cancel</button>
+          </div>
+        </section>
+
+        <!-- Completion -->
+        <section id="doneCard" class="card card-body border-success mb-3 d-none" aria-labelledby="doneHeading">
+          <h2 id="doneHeading" class="h5 text-success">Download complete.</h2>
+          <p id="doneFile" class="mb-3 text-break"></p>
+          <div class="d-flex gap-2 flex-wrap">
+            <a id="fileBtn" class="btn btn-success" href="#" download>Download File</a>
+            <button id="folderBtn" class="btn btn-outline-secondary" type="button">Open Folder</button>
+            <button id="newBtn" class="btn btn-link" type="button">Download another</button>
+          </div>
+        </section>
+
+        <div id="failCard" class="alert alert-danger d-none" role="alert"></div>
+      </section>
+
+      <!-- ===================== History ===================== -->
+      <section class="tab-pane fade" id="pane-history" role="tabpanel" aria-labelledby="tab-history" tabindex="0">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h2 class="h4 mb-0">Download history</h2>
+          <button id="refreshHistory" class="btn btn-outline-secondary btn-sm" type="button">Refresh</button>
+        </div>
+        <div id="historyEmpty" class="text-body-secondary d-none">Nothing downloaded yet.</div>
+        <div class="table-responsive">
+          <table class="table align-middle d-none" id="historyTable">
+            <thead>
+              <tr><th scope="col">Title</th><th scope="col">Format</th><th scope="col">Date</th><th scope="col">Status</th><th scope="col" class="text-end">Size</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>
+            </thead>
+            <tbody id="historyBody"></tbody>
+          </table>
+        </div>
+        <div id="historyError" class="alert alert-danger d-none" role="alert"></div>
+      </section>
+
+      <!-- ===================== Help / About ===================== -->
+      <section class="tab-pane fade" id="pane-about" role="tabpanel" aria-labelledby="tab-about" tabindex="0">
+        <h2 class="h4">How it works</h2>
+        <ol>
+          <li>Paste a YouTube video link and press <strong>Analyze</strong>.</li>
+          <li>Choose <strong>MP4</strong> (video) or <strong>MP3</strong> (audio) and the quality.</li>
+          <li>Press <strong>Download</strong>. You can cancel at any time.</li>
+          <li>When it is finished, press <strong>Download File</strong> to save it.</li>
+        </ol>
+        <p class="text-body-secondary">MP3 files are converted from the audio YouTube provides; a higher MP3 bitrate cannot improve the original quality. Please only download content you are authorized to download.</p>
+        <h2 class="h5 mt-4">About</h2>
+        <dl class="row" id="aboutInfo">
+          <dt class="col-sm-4">Application</dt><dd class="col-sm-8" id="aboutApp">YouTube Downloader</dd>
+          <dt class="col-sm-4">Version</dt><dd class="col-sm-8" id="aboutVersion">-</dd>
+          <dt class="col-sm-4">Media engine</dt><dd class="col-sm-8">yt-dlp <span id="aboutYtdlp">-</span></dd>
+          <dt class="col-sm-4">FFmpeg</dt><dd class="col-sm-8" id="aboutFfmpeg">-</dd>
+          <dt class="col-sm-4">Limits</dt><dd class="col-sm-8" id="aboutLimits">-</dd>
+        </dl>
+      </section>
+    </div>
+  </main>
+
+  <script src="assets/vendor/bootstrap.bundle.min.js"></script>
+  <script type="module" src="assets/js/app.js"></script>
+</body>
+</html>

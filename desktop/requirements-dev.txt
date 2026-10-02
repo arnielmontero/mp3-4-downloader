@@ -1,0 +1,4 @@
+-r requirements.txt
+# build + test tooling
+pyinstaller>=6.6
+pytest>=8

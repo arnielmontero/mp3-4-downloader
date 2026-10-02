@@ -1,0 +1,38 @@
+/* Small additions on top of Bootstrap 5 */
+:root { --brand: #d62839; }
+
+.navbar-brand::before {
+  content: "";
+  display: inline-block;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-right: .5rem;
+  vertical-align: -.2rem;
+  border-radius: .3rem;
+  background: var(--brand) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M26 18v28l24-14z' fill='white'/%3E%3C/svg%3E") center / cover;
+}
+
+/* Visible focus for keyboard users */
+:focus-visible {
+  outline: 3px solid #0d6efd;
+  outline-offset: 2px;
+}
+
+.thumb { object-fit: cover; max-height: 280px; background: var(--bs-secondary-bg); }
+@media (min-width: 768px) { .thumb { border-top-right-radius: 0; border-bottom-right-radius: 0; } }
+@media (max-width: 767.98px) { .thumb { border-radius: var(--bs-border-radius) var(--bs-border-radius) 0 0 !important; } }
+
+.info-list dt { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--bs-secondary-color); margin-top: .5rem; }
+.info-list dd { margin-bottom: 0; word-break: break-word; }
+
+/* Indeterminate progress (engine cannot report a percentage, or FFmpeg is processing) */
+.progress-bar.indeterminate {
+  width: 100% !important;
+  background-image: linear-gradient(45deg, rgba(255,255,255,.2) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.2) 50%, rgba(255,255,255,.2) 75%, transparent 75%);
+  background-size: 1rem 1rem;
+  animation: progress-bar-stripes 1s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { .progress-bar.indeterminate { animation: none; } }
+
+#historyTable td { vertical-align: middle; }
+.history-title { max-width: 22rem; overflow-wrap: anywhere; }
