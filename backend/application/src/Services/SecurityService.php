@@ -146,6 +146,23 @@ final class SecurityService
         return $bitrate;
     }
 
+    /** Search text: 1-100 characters, control characters removed, whitespace collapsed. */
+    public function validateSearchQuery(mixed $query): string
+    {
+        if (!is_string($query) || !mb_check_encoding($query, 'UTF-8')) {
+            throw new ApiException('INVALID_QUERY', 'Please enter something to search for.');
+        }
+        $query = preg_replace('/[\p{Cc}\p{Cf}]/u', ' ', $query) ?? '';
+        $query = trim(preg_replace('/\s+/u', ' ', $query) ?? '');
+        if ($query === '') {
+            throw new ApiException('INVALID_QUERY', 'Please enter something to search for.');
+        }
+        if (mb_strlen($query) > 100) {
+            throw new ApiException('INVALID_QUERY', 'The search text is too long (100 characters at most).');
+        }
+        return $query;
+    }
+
     public function validateJobId(mixed $id): string
     {
         if (!is_string($id) || preg_match('/^[a-f0-9]{32}$/', $id) !== 1) {

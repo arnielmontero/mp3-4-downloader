@@ -83,6 +83,11 @@ def window(qapp, service, tmp_path, data_dir):
     w = MainWindow(service, settings)
     w.show()
     yield w
+    for item in w.active_items():  # never leave a modal "cancel and exit?" prompt (or a download) behind
+        item.cancel()
+    for item in list(w.items):
+        item.wait(20000)
+    qapp.processEvents()
     w.close()
     qapp.processEvents()
 

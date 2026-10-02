@@ -21,6 +21,14 @@ interface MediaDownloader
      */
     public function getInfo(string $url): array;
 
+    /**
+     * Search YouTube (metadata only).
+     *
+     * @return list<array<string,mixed>> video_id, title, uploader, duration, duration_formatted, thumbnail, webpage_url
+     * @throws \App\Support\ApiException
+     */
+    public function search(string $query, int $limit): array;
+
     /** Start a metadata task; $format/$quality are used to resolve which streams would be downloaded. */
     public function startInfo(string $url, string $format, string $quality): MediaTask;
 

@@ -9,6 +9,7 @@ $route['translate_uri_dashes'] = FALSE;
 $route['api/health']['get'] = 'health/index';
 $route['api/about']['get'] = 'health/about';
 $route['api/video/info']['post'] = 'video/info';
+$route['api/search']['post'] = 'video/search';
 
 $route['api/download']['post'] = 'download/create';
 $route['api/download/history']['get'] = 'history/index';

@@ -19,6 +19,7 @@ final class YtDlpDownloader implements MediaDownloader
 {
     private const STANDARD_HEIGHTS = [144, 240, 360, 480, 720, 1080, 1440, 2160, 4320];
     private const INFO_TAG = 'YTDINFO ';
+    private const SEARCH_TAG = 'YTDS ';
     private const FORMATS_TAG = 'YTDFMT ';
     private const MAX_INFO_BYTES = 8388608;
     private const PROGRESS_TAG = 'YTDP|';
@@ -144,6 +145,59 @@ final class YtDlpDownloader implements MediaDownloader
     public function kill(MediaTask $task): void
     {
         $this->processes->kill($task->process);
+    }
+
+    /** @return list<string> */
+    public function buildSearchCommand(string $query, int $limit): array
+    {
+        $cmd = $this->baseArgs();
+        // the "ytsearchN:" prefix plus "--" make it impossible for the query to be parsed as an option
+        $cmd[] = '--flat-playlist';
+        $cmd[] = '--print';
+        $cmd[] = self::SEARCH_TAG . '%(.{id,title,uploader,channel,duration,live_status})j';
+        $cmd[] = '--';
+        $cmd[] = 'ytsearch' . $limit . ':' . $query;
+        return $cmd;
+    }
+
+    public function search(string $query, int $limit): array
+    {
+        $limit = max(1, min(25, $limit));
+        $r = $this->processes->run($this->buildSearchCommand($query, $limit), $this->config->infoTimeoutSeconds);
+        if ($r['timeout']) {
+            throw new ApiException('DOWNLOAD_FAILED', 'Unable to connect. Please check your internet connection.', 504);
+        }
+        if ($r['exit'] !== 0) {
+            [$code, $message] = self::classifyError($r['stderr']);
+            throw new ApiException($code, $message);
+        }
+        $results = [];
+        foreach (explode("\n", $r['stdout']) as $line) {
+            if (!str_starts_with($line, self::SEARCH_TAG)) {
+                continue;
+            }
+            $item = json_decode(substr($line, strlen(self::SEARCH_TAG)), true);
+            if (!is_array($item) || !isset($item['id']) || preg_match('/^[A-Za-z0-9_-]{11}$/', (string) $item['id']) !== 1) {
+                continue;
+            }
+            if (in_array($item['live_status'] ?? '', ['is_live', 'is_upcoming'], true)) {
+                continue; // live streams cannot be downloaded
+            }
+            $id = (string) $item['id'];
+            $duration = isset($item['duration']) && is_numeric($item['duration']) ? (int) round((float) $item['duration']) : null;
+            $uploader = $item['uploader'] ?? $item['channel'] ?? null;
+            $results[] = [
+                'video_id' => $id,
+                'title' => isset($item['title']) ? (string) $item['title'] : $id,
+                'uploader' => $uploader !== null ? (string) $uploader : null,
+                'duration' => $duration,
+                'duration_formatted' => $duration !== null ? self::formatDuration($duration) : null,
+                // derived from the validated id: always an https YouTube image host
+                'thumbnail' => 'https://i.ytimg.com/vi/' . $id . '/mqdefault.jpg',
+                'webpage_url' => 'https://www.youtube.com/watch?v=' . $id,
+            ];
+        }
+        return $results;
     }
 
     public function getInfo(string $url): array

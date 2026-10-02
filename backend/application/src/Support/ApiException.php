@@ -17,6 +17,7 @@ final class ApiException extends \RuntimeException
         'INVALID_QUALITY' => 400,
         'INVALID_BITRATE' => 400,
         'INVALID_JOB_ID' => 400,
+        'INVALID_QUERY' => 400,
         'UNSUPPORTED_DOMAIN' => 400,
         'JOB_NOT_FOUND' => 404,
         'FILE_NOT_FOUND' => 404,

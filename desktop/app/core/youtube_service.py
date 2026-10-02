@@ -8,7 +8,7 @@ from pathlib import Path
 
 from . import file_service, paths, security
 from .errors import MSG_OUTPUT, AppError, OutputFolderError
-from .media_downloader import MediaDownloader, ProgressCallback, VideoInfo
+from .media_downloader import MediaDownloader, ProgressCallback, SearchResult, VideoInfo
 
 log = logging.getLogger("ytd.service")
 
@@ -29,6 +29,13 @@ class YouTubeService:
         if info.is_live:
             raise AppError("Live streams cannot be downloaded.", code="VIDEO_UNAVAILABLE")
         return info
+
+    def search(self, text: str) -> list[SearchResult]:
+        """Text -> YouTube search results. A pasted YouTube link yields exactly one result (that video)."""
+        if security.looks_like_url(text):
+            info = self.analyze(text)
+            return [SearchResult(info.video_id, info.title, info.uploader, info.duration, info.thumbnail or f"https://i.ytimg.com/vi/{info.video_id}/mqdefault.jpg", info.webpage_url)]
+        return self.engine.search(security.validate_search_query(text))
 
     def fetch_thumbnail(self, url: str | None) -> bytes | None:
         """Download the thumbnail image (YouTube image hosts only, size limited). None on any problem."""

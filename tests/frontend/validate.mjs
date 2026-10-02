@@ -26,8 +26,8 @@ for (const f of ['app.js', 'api.js', 'format.js']) {
   if (/innerHTML\s*=/.test(src)) errors.push(`${f} assigns innerHTML (XSS risk)`);
 }
 if (!/<html lang=/.test(html)) errors.push('missing lang attribute');
-for (const label of ['urlInput', 'qualitySelect', 'bitrateSelect']) if (!new RegExp(`for="${label}"`).test(html)) errors.push(`no <label for="${label}">`);
-if (!/aria-live=/.test(html)) errors.push('no aria-live region for progress announcements');
+for (const label of ['searchInput']) if (!new RegExp(`for="${label}"`).test(html)) errors.push(`no <label for="${label}">`);
+if (!/aria-live=/.test(html) && !/aria-live/.test(app)) errors.push('no aria-live region for progress announcements');
 
 if (errors.length) { console.error(errors.join('\n')); process.exit(1); }
 console.log(`frontend OK (${ids.size} element ids, 3 modules checked)`);

@@ -39,6 +39,7 @@ log = logging.getLogger("ytd.engine")
 
 INFO_TAG = "YTDINFO "
 FORMATS_TAG = "YTDFMT "
+SEARCH_TAG = "YTDS "
 PROGRESS_TAG = "YTDP|"
 _STANDARD_HEIGHTS = (144, 240, 360, 480, 720, 1080, 1440, 2160, 4320)
 _PROCESSING = re.compile(
@@ -67,6 +68,28 @@ class VideoInfo:
     @property
     def duration_formatted(self) -> str:
         return format_duration(self.duration) if self.duration is not None else "Unknown"
+
+
+@dataclass
+class SearchResult:
+    video_id: str
+    title: str
+    uploader: str | None
+    duration: int | None
+    thumbnail: str
+    webpage_url: str
+
+    @property
+    def duration_formatted(self) -> str:
+        return format_duration(self.duration) if self.duration is not None else ""
+
+    def to_video_info(self) -> "VideoInfo":
+        """Minimal VideoInfo so a search result can be handed straight to the download pipeline."""
+        return VideoInfo(
+            video_id=self.video_id, title=self.title, uploader=self.uploader, duration=self.duration, thumbnail=self.thumbnail,
+            webpage_url=self.webpage_url, is_live=False, has_video=True, has_audio=True, qualities=["best"],
+            source_audio_bitrate=None, filesize=None,
+        )
 
 
 @dataclass
@@ -110,6 +133,10 @@ class MediaDownloader(ABC):
     @abstractmethod
     def get_info(self, url: str, job_id: str = "info") -> VideoInfo:
         """Metadata only - never downloads media."""
+
+    @abstractmethod
+    def search(self, query: str, limit: int = 10) -> list[SearchResult]:
+        """Search YouTube (metadata only)."""
 
     @abstractmethod
     def download_mp4(self, url: str, quality: str, out_dir: Path, job_id: str, on_progress: ProgressCallback | None = None) -> Path:
@@ -264,6 +291,58 @@ class YtDlpDownloader(MediaDownloader):
         info = normalize_info(raw_info, formats if isinstance(formats, list) else [])
         size = raw_info.get("filesize") or raw_info.get("filesize_approx")
         return info, int(size) if isinstance(size, (int, float)) else None
+
+    def build_search_command(self, query: str, limit: int) -> list[str]:
+        # "ytsearchN:" prefix + "--": the query can never be parsed as an option
+        return [*self._base_args(), "--flat-playlist", "--print", SEARCH_TAG + "%(.{id,title,uploader,channel,duration,live_status})j", "--", f"ytsearch{limit}:{query}"]
+
+    def search(self, query: str, limit: int = 10) -> list[SearchResult]:
+        limit = max(1, min(25, int(limit)))
+        job_id = "search"
+        proc = self._processes.start(job_id, self.build_search_command(query, limit))
+        out: list[str] = []
+        timed_out = threading.Event()
+        done = threading.Event()
+
+        def watchdog() -> None:
+            if not done.wait(self._info_timeout):
+                timed_out.set()
+                self._processes.terminate(job_id)
+
+        threading.Thread(target=watchdog, daemon=True).start()
+        try:
+            assert proc.stdout is not None
+            for raw in proc.stdout:
+                out.append(raw.decode("utf-8", "replace").rstrip("\r\n"))
+            proc.wait()
+        finally:
+            done.set()
+            self._processes.release(job_id)
+        if timed_out.is_set():
+            raise NetworkError(MSG_NETWORK, detail="search timeout")
+        if proc.returncode != 0:
+            raise classify_error("\n".join(line for line in out if not line.startswith("YTD")))
+        results: list[SearchResult] = []
+        for line in out:
+            if not line.startswith(SEARCH_TAG):
+                continue
+            try:
+                item = json.loads(line[len(SEARCH_TAG):])
+            except ValueError:
+                continue
+            vid = str(item.get("id", ""))
+            if not re.fullmatch(r"[A-Za-z0-9_-]{11}", vid) or item.get("live_status") in ("is_live", "is_upcoming"):
+                continue
+            duration = item.get("duration")
+            results.append(SearchResult(
+                video_id=vid,
+                title=str(item.get("title") or vid),
+                uploader=item.get("uploader") or item.get("channel"),
+                duration=int(round(float(duration))) if isinstance(duration, (int, float)) else None,
+                thumbnail=f"https://i.ytimg.com/vi/{vid}/mqdefault.jpg",
+                webpage_url=f"https://www.youtube.com/watch?v={vid}",
+            ))
+        return results
 
     def download_mp4(self, url, quality, out_dir, job_id, on_progress=None):
         return self._download(url, "mp4", quality, DEFAULT_BITRATE, out_dir, job_id, on_progress)

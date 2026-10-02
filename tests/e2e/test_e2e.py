@@ -91,7 +91,8 @@ class TestAvailability(unittest.TestCase):
         html = body.decode()
         self.assertEqual(200, status)
         self.assertIn("YouTube Downloader", html)
-        self.assertIn('id="urlInput"', html)
+        self.assertIn('id="searchInput"', html)
+        self.assertIn('id="jobList"', html)  # right-hand downloads sidebar
         for asset in ("/assets/vendor/bootstrap.min.css", "/assets/vendor/bootstrap.bundle.min.js", "/assets/js/app.js", "/assets/js/api.js", "/assets/css/app.css"):
             self.assertEqual(200, api.request("GET", asset)[0], asset)
 
@@ -146,7 +147,7 @@ class TestAnalyze(unittest.TestCase):
     def test_analysis_downloads_nothing(self):
         api = client()
         api.json("POST", "/api/video/info", {"url": "https://youtu.be/okvideo0007"})
-        calls = exec_in("worker", "cat", "/tmp/fake-ytdlp-calls.log")
+        calls = exec_in("app", "cat", "/tmp/fake-ytdlp-calls.log")
         self.assertEqual([], temp_dirs())
         self.assertEqual([], [c for c in calls.splitlines() if "okvideo0007" in c and '"-o"' in c])
 
@@ -177,11 +178,11 @@ class TestAnalyze(unittest.TestCase):
 
     def test_shell_metacharacters_never_reach_the_engine(self):
         api = client()
-        before = exec_in("worker", "cat", "/tmp/fake-ytdlp-calls.log").count("\n")
+        before = exec_in("app", "cat", "/tmp/fake-ytdlp-calls.log").count("\n")
         for url in ("https://youtu.be/dQw4w9WgXcQ;id", "https://youtu.be/dQw4w9WgXcQ|id", "https://youtu.be/$(id)", "https://youtu.be/`id`", "--exec=id"):
             status, _, _ = api.json("POST", "/api/video/info", {"url": url})
             self.assertEqual(400, status, url)
-        after = exec_in("worker", "cat", "/tmp/fake-ytdlp-calls.log").count("\n")
+        after = exec_in("app", "cat", "/tmp/fake-ytdlp-calls.log").count("\n")
         self.assertEqual(before, after, "yt-dlp must not have been started for rejected input")
 
     def test_excessive_duration_is_rejected(self):  # acceptance 10
@@ -203,6 +204,54 @@ class TestAnalyze(unittest.TestCase):
         status, doc, _ = api.json("POST", "/api/video/info", {"url": "https://youtu.be/livevideo01"})
         self.assertEqual(422, status)
         self.assertEqual("VIDEO_UNAVAILABLE", doc["error"]["code"])
+
+
+class TestSearch(unittest.TestCase):
+    def test_search_returns_downloadable_results(self):
+        api = client()
+        status, doc, _ = api.json("POST", "/api/search", {"query": "  never   gonna  "})
+        self.assertEqual(200, status)
+        self.assertEqual("never gonna", doc["data"]["query"])
+        results = doc["data"]["results"]
+        self.assertEqual(4, len(results), "the live stream result is filtered out")
+        first = results[0]
+        for key in ("video_id", "title", "uploader", "duration", "duration_formatted", "thumbnail", "webpage_url"):
+            self.assertIn(key, first)
+        self.assertEqual("Result 1 for never gonna", first["title"])
+        self.assertEqual("3:00", first["duration_formatted"])
+        self.assertTrue(first["thumbnail"].startswith("https://i.ytimg.com/vi/"))
+        self.assertEqual("https://www.youtube.com/watch?v=okvideo0001", first["webpage_url"])
+        self.assertNotIn("livevideo01", json.dumps(results))
+
+    def test_a_result_can_be_downloaded_straight_away(self):
+        api = client()
+        result = api.json("POST", "/api/search", {"query": "song"})[1]["data"]["results"][0]
+        job_id = analyze_and_download(api, result["video_id"], "mp3", bitrate=192)
+        self.assertEqual("completed", api.wait_for(job_id)["status"])
+
+    def test_empty_results_and_errors(self):
+        api = client()
+        self.assertEqual([], api.json("POST", "/api/search", {"query": "nothingfound"})[1]["data"]["results"])
+        for bad in ("", "   ", None, 5, "x" * 101):
+            status, doc, _ = api.json("POST", "/api/search", {"query": bad})
+            self.assertEqual(400, status, bad)
+            self.assertEqual("INVALID_QUERY", doc["error"]["code"])
+        status, doc, _ = api.json("POST", "/api/search", {"query": "failsearch"})
+        self.assertEqual(502, status)
+        self.assertEqual("Unable to connect. Please check your internet connection.", doc["error"]["message"])
+        self.assertEqual(404, api.json("GET", "/api/search")[0])
+
+    def test_search_is_rate_limited_and_never_leaks_option_injection(self):
+        api = client()
+        before = exec_in("app", "cat", "/tmp/fake-ytdlp-calls.log").count("\n")
+        status, doc, _ = api.json("POST", "/api/search", {"query": "--exec id; $(id)"})
+        self.assertEqual(200, status)
+        calls = [json.loads(l) for l in exec_in("app", "cat", "/tmp/fake-ytdlp-calls.log").splitlines()[before:]]
+        args = calls[-1]["args"] if calls else []
+        self.assertEqual("--", args[-2])
+        self.assertEqual("ytsearch10:--exec id; $(id)", args[-1])
+        codes = [api.json("POST", "/api/search", {"query": "q"})[0] for _ in range(21)]
+        self.assertEqual(429, codes[-1])
 
 
 class TestRequestHandling(unittest.TestCase):

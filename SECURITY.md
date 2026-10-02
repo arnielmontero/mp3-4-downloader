@@ -16,6 +16,12 @@ Every item below is covered by automated tests (`backend` unit/integration, `tes
   so only the validated id ever reaches yt-dlp.
 * Thumbnails are only shown from `*.ytimg.com`/`*.ggpht.com` over https.
 
+## Search input
+`POST /api/search` accepts 1-100 characters of text (control/invisible characters stripped, whitespace collapsed, valid UTF-8). The text is
+passed to yt-dlp as the single argument `ytsearchN:<text>` after `--`, so it can never be parsed as an option or shell syntax; only
+11-character video ids from the result are used afterwards, thumbnails are derived from the id (`i.ytimg.com`). Searches are rate limited
+like analyses. The desktop app validates the same way.
+
 ## Command-execution protection
 * Processes are started with argument arrays (`proc_open([...])` with `bypass_shell`, Python `Popen(list, shell=False)`); no shell
   string is ever built. The URL is placed after `--` so it cannot be read as an option; format/quality/bitrate come from fixed allow-lists.

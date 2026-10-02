@@ -35,6 +35,7 @@ async function request(method, path, body) {
 }
 
 export const api = {
+  search: (query) => request('POST', '/api/search', { query }).then((r) => r.data),
   analyze: (url) => request('POST', '/api/video/info', { url }).then((r) => r.data),
   startDownload: (options) => request('POST', '/api/download', options).then((r) => r.data),
   status: (id) => request('GET', `/api/download/${encodeURIComponent(id)}`).then((r) => r.data),

@@ -63,6 +63,19 @@ for fmt, ext, extra in (("mp4", "mp4", {"quality": "360p"}), ("mp3", "mp3", {"bi
     duration = float(info.get("format", {}).get("duration", 0) or 0)
     record(f"{fmt} file playable", status == 200 and duration > 1, f"streams={codecs} duration={duration:.1f}s content-type={headers.get('Content-Type')}")
 
+# --- search + several simultaneous downloads (main display + sidebar flow)
+status, doc, _ = api.json("POST", "/api/search", {"query": "rick astley never gonna give you up"})
+results = doc["data"]["results"] if status == 200 else []
+record("search returns results", status == 200 and len(results) >= 3, f"{len(results)} results; first={results[0]['title'][:50] if results else ''}")
+if len(results) >= 2:
+    ids = []
+    for r, fmt in ((results[0], "mp3"), (results[1], "mp3")):
+        st, d, _ = api.json("POST", "/api/download", {"url": r["webpage_url"], "format": fmt, "bitrate": 192})
+        assert st == 202, (st, d)
+        ids.append(d["job_id"])
+    jobs = [api.wait_for(i, timeout=600) for i in ids]
+    record("two searched downloads run together and complete", all(j["status"] == "completed" for j in jobs), ", ".join(j["status"] for j in jobs))
+
 shutil.rmtree(tmp, ignore_errors=True)
 failed = [r for r in results if not r[1]]
 print(f"\n{len(results) - len(failed)}/{len(results)} checks passed")

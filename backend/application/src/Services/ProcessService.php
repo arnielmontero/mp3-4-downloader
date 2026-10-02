@@ -64,10 +64,12 @@ final class ProcessService
             foreach ($lines as $l) {
                 $out .= $l . "\n";
             }
+            $p->readStderr(); // keep draining stderr so a chatty child can never block on a full pipe
             if (!$p->isRunning()) {
                 foreach ($p->readStdout(true) as $l) {
                     $out .= $l . "\n";
                 }
+                $p->readStderr(true);
                 break;
             }
             if (microtime(true) > $deadline) {

@@ -14,6 +14,34 @@ from ..core.youtube_service import YouTubeService
 log = logging.getLogger("ytd.worker")
 
 
+class SearchWorker(QThread):
+    succeeded = Signal(object, object)  # list[SearchResult], {video_id: thumbnail bytes}
+    failed = Signal(str, str)
+
+    def __init__(self, service: YouTubeService, text: str, parent=None) -> None:
+        super().__init__(parent)
+        self._service = service
+        self._text = text
+
+    def run(self) -> None:
+        try:
+            results = self._service.search(self._text)
+            thumbs = {}
+            for r in results:
+                data = self._service.fetch_thumbnail(r.thumbnail)
+                if data:
+                    thumbs[r.video_id] = data
+        except AppError as exc:
+            log.warning("search failed: %s", exc.detail or exc.message, extra={"op": "search", "status": "failed", "error_code": exc.code})
+            self.failed.emit(exc.message, exc.code)
+            return
+        except Exception:  # noqa: BLE001
+            log.exception("unexpected search error", extra={"op": "search", "status": "error"})
+            self.failed.emit(MSG_UNAVAILABLE, "ERROR")
+            return
+        self.succeeded.emit(results, thumbs)
+
+
 class AnalyzeWorker(QThread):
     succeeded = Signal(object, object)  # VideoInfo, thumbnail bytes | None
     failed = Signal(str, str)  # friendly message, error code

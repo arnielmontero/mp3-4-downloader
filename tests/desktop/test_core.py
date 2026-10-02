@@ -393,3 +393,22 @@ def test_log_file_is_structured_json(tmp_path):
     for h in list(logging.getLogger("ytd").handlers):
         logging.getLogger("ytd").removeHandler(h)
         h.close()
+
+
+# ------------------------------------------------------------------ search
+def test_search_query_validation_and_link_detection():
+    assert security.validate_search_query("  rick\t astley \n never   gonna ") == "rick astley never gonna"
+    assert security.validate_search_query("a\x00b") == "a b"
+    for bad in ("", "   ", None, 5, "x" * 101):
+        with pytest.raises(AppError) as info:
+            security.validate_search_query(bad)
+        assert info.value.code == "INVALID_QUERY"
+    assert security.looks_like_url("https://youtu.be/x") and security.looks_like_url("www.youtube.com/watch?v=1")
+    assert not security.looks_like_url("rick astley") and not security.looks_like_url("never gonna give you up")
+
+
+def test_search_command_cannot_be_hijacked_by_the_query():
+    for evil in ("--exec id", "; rm -rf /", "$(id) `id` | cat", "--output C:/x"):
+        cmd = engine().build_search_command(evil, 10)
+        assert cmd[-1] == f"ytsearch10:{evil}" and cmd[-2] == "--" and cmd.count(cmd[-1]) == 1
+        assert "--flat-playlist" in cmd and "-o" not in cmd

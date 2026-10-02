@@ -12,8 +12,13 @@ A self-hosted downloader for single YouTube videos with two front ends that shar
 
 ## Features
 
-* Paste URL → **Analyze** (title, duration, uploader, thumbnail, real available qualities) → choose **MP4** or **MP3**
-  → quality / MP3 bitrate (128/192/256/320 kbps, default 192) → download with live progress, speed, ETA → **cancel** → save.
+* **Search-first layout (web and desktop):** the main display searches YouTube (or takes a pasted link) and lists results
+  with thumbnail, title, uploader and duration. Each result has an **MP3 / MP4** choice and a **Download** button; pressing it
+  moves the download to the **right-hand Downloads sidebar**, which shows live percentage, speed and ETA with its own **Cancel**.
+  You can keep searching and add **as many downloads as you like** at the same time (the web server runs
+  `MAX_CONCURRENT_DOWNLOADS` at once and queues the rest; the desktop app runs 3 at once and queues the rest).
+* MP3 uses 192 kbps by default (desktop: configurable in Settings); MP4 uses the best H.264/AAC quality (desktop: default quality
+  from Settings). The API still accepts 128/192/256/320 kbps and 144p-4320p.
 * MP4 prefers H.264/AAC for compatibility; separate streams are merged by FFmpeg into `.mp4`.
 * MP3 is extracted/converted by FFmpeg with title/artist metadata (only what YouTube provides). The UI warns when the
   chosen bitrate exceeds the source audio — conversion cannot improve quality.
@@ -107,13 +112,24 @@ Requests with a body must be `Content-Type: application/json` (max 8 KiB). Job i
 |---|---|
 | `GET /api/health` | `{"status":"ok","yt_dlp":true,"ffmpeg":true,"worker":{…}}` — 503 if yt-dlp/FFmpeg are missing |
 | `GET /api/about` | app, yt-dlp and FFmpeg versions, limits |
-| `POST /api/video/info` | analyze a URL |
+| `POST /api/search` | search YouTube by text (max 10 results) |
+| `POST /api/video/info` | analyze a pasted URL |
 | `POST /api/download` | create a job → `202 {"success":true,"job_id":"…","data":{…}}` |
 | `GET /api/download/{id}` | status/progress |
 | `POST /api/download/{id}/cancel` | cancel (queued: immediate; running: stops that job's processes) |
 | `GET /api/download/{id}/file` | the finished file (only when `completed`) |
 | `GET /api/download/history` | this browser's jobs (cookie `ytd_client`) |
 | `DELETE /api/download/history/{id}` | delete entry and stored file |
+
+### `POST /api/search`
+Request `{"query":"rick astley never gonna"}` (1-100 characters; control characters/whitespace are normalised) → `200`
+```json
+{"success":true,"data":{"query":"rick astley never gonna","results":[
+ {"video_id":"dQw4w9WgXcQ","title":"…","uploader":"Rick Astley","duration":214,"duration_formatted":"3:34",
+  "thumbnail":"https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg","webpage_url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ"}]}}
+```
+Live streams are filtered out; an empty `results` list means nothing was found. Each result can be passed straight to `POST /api/download`
+(`url` = `webpage_url`). Errors: `INVALID_QUERY` 400, `RATE_LIMITED` 429 (shares the `RATE_LIMIT_ANALYZE` limit), `DOWNLOAD_FAILED` 502 (network), `INVALID_REQUEST`/`REQUEST_TOO_LARGE`/`UNSUPPORTED_MEDIA_TYPE`.
 
 ### `POST /api/video/info`
 Request `{"url":"https://youtu.be/dQw4w9WgXcQ"}` → `200`
@@ -167,6 +183,7 @@ curl -s -X POST localhost:8080/api/download -H "Content-Type: application/json" 
 | Live check vs. real YouTube | `python tests/e2e/live_check.py http://localhost:8080 [URL]` | internet, ffprobe |
 | Frontend | `node tests/frontend/validate.mjs && node --test tests/frontend/format.test.mjs` | Node 20+ |
 | Desktop | `desktop\.venv\Scripts\python -m pytest tests/desktop` | Windows, FFmpeg on PATH |
+| Web UI in a real browser (Playwright + installed Edge/Chrome, fresh fake-engine stack) | `python tests/e2e/ui_check.py http://localhost:18080` | `pip install playwright` |
 | Packaged EXE (UI automation) | `powershell -File tests\desktop\gui_exe_check.ps1` | built EXE, internet |
 
 The automated suites never depend on YouTube: they use `tests/fixtures/fake-yt-dlp` / `fake_ytdlp.py`.
@@ -206,8 +223,8 @@ sanitised logs, hardened containers.
 * YouTube enforcement (PO tokens, JS challenges, SABR) changes constantly; downloads may break until yt-dlp is updated.
   Videos requiring login/age confirmation/membership or live streams are refused — no cookies/PO-token workarounds are implemented.
 * Single videos only (no playlists/channels). No subtitles, scheduling or browser integration (extension points exist: `MediaDownloader`).
-* The web "Open Folder" button opens the **History** tab (a server cannot open folders on the visitor's computer).
+* The web "Open Folder" button (on a finished card) opens the **History** tab (a server cannot open folders on the visitor's computer).
 * No accounts: history is scoped by an anonymous cookie, not a login. Job metadata is JSON files (fine for personal/small team use; not meant for thousands of jobs).
-* Desktop runs one download at a time ("maximum simultaneous downloads" is not offered). The desktop EXE is not code-signed, so Windows SmartScreen may warn.
+* The desktop app runs up to 3 downloads at once (`MainWindow.MAX_PARALLEL`); more wait in the sidebar. The desktop EXE is not code-signed, so Windows SmartScreen may warn.
 * The Windows build is a one-file EXE that unpacks Qt into a temp folder at start; the `bin\` folder must stay next to it.
 * FFmpeg builds bundled/installed are GPL-licensed; see `THIRD-PARTY-NOTICES.md`.

@@ -226,3 +226,36 @@ def test_versions_reported(engine_parts):
     v = engine.versions()
     assert v["yt_dlp"] == "2099.01.01"
     assert v["ffmpeg"]
+
+
+# ------------------------------------------------------------------ search
+def test_search_returns_downloadable_results_without_live_streams(service):
+    results = service.search("  never   gonna ")
+    assert [r.video_id for r in results] == ["okvideo0001", "okvideo0002", "okvideo0003", "slowvideo01"]
+    first = results[0]
+    assert first.title == "Result 1 for never gonna" and first.uploader == "Fake Channel"
+    assert first.duration_formatted == "3:00"
+    assert first.thumbnail == "https://i.ytimg.com/vi/okvideo0001/mqdefault.jpg"
+    assert first.webpage_url == "https://www.youtube.com/watch?v=okvideo0001"
+
+
+def test_search_link_gives_one_result_and_bad_input_never_spawns(service, call_log):
+    assert [r.video_id for r in service.search("https://youtu.be/okvideo0001")] == ["okvideo0001"]
+    before = len(calls(call_log))
+    for bad in ("", "x" * 101, "http://localhost/x"):
+        with pytest.raises(Exception):
+            service.search(bad)
+    assert len(calls(call_log)) == before
+
+
+def test_search_empty_and_network_failure(service):
+    assert service.search("nothingfound") == []
+    with pytest.raises(NetworkError) as e:
+        service.search("failsearch")
+    assert e.value.message == "Unable to connect. Please check your internet connection."
+
+
+def test_search_result_can_be_downloaded(service, tmp_path):
+    result = service.search("song")[0]
+    path = service.download(result.to_video_info(), "mp3", "best", 192, tmp_path / "out")
+    assert path.name == "Result 1 for song.mp3" and path.is_file()

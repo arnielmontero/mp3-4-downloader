@@ -65,3 +65,13 @@ Only items that were implemented **and** tested are ticked.
   Docker image installs `yt-dlp[default]` + Deno; desktop bundles yt-dlp.exe + deno.exe. No PO-token/cookie workaround was added.
 - Not verified: a pristine Windows machine/VM (all Windows tests ran on the development machine); code signing; ARM64 images.
 - Port 8080 was occupied on the dev machine, so local runs used `WEB_PORT` (8085 / 18080).
+
+## Search + sidebar feature (added after the first release)
+- Web: `POST /api/search`, search-first UI with a right-hand Downloads sidebar (any number of downloads at once).
+  Verified: PHPUnit 188 (Docker), e2e 39 (fake engine, incl. 4 search tests), real-browser UI check 18/18 (Playwright + Edge), live search on real
+  YouTube followed by two simultaneous MP3 downloads (live_check).
+- Desktop: search main display + right sidebar (`ResultRow`, `DownloadItem`), up to 3 simultaneous downloads, the rest queue.
+  Verified: pytest 144 (core 110, engine integration 17, GUI 17), packaged-EXE UI automation 21/21 (search, MP3+MP4 together, two downloads with
+  progress, cancel one of two, restart persistence), installer rebuilt.
+- Bug found by the new tests: `ProcessService::run()` never drained stderr, so error classification of one-shot commands saw an empty message
+  (fixed). Per-row format choice on desktop is two radio buttons (a combo box cannot be driven reliably through UI Automation / screen readers).

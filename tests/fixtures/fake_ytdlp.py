@@ -33,6 +33,22 @@ def arg(name: str):
     return args[args.index(name) + 1] if name in args else None
 
 
+if "--flat-playlist" in args:  # search: "ytsearchN:query"
+    m2 = re.match(r"ytsearch(\d+):(.*)$", url, re.S)
+    if not m2:
+        print("ERROR: unsupported URL", file=sys.stderr)
+        sys.exit(1)
+    if "failsearch" in m2.group(2):
+        print("ERROR: Unable to download webpage: <urlopen error [Errno -3] Temporary failure in name resolution>", file=sys.stderr)
+        sys.exit(1)
+    ids = [] if "nothingfound" in m2.group(2) else ["okvideo0001", "okvideo0002", "okvideo0003", "slowvideo01", "livevideo01"]
+    for n, rid in enumerate(ids[: int(m2.group(1))]):
+        print("YTDS " + json.dumps({
+            "id": rid, "title": f"Result {n + 1} for {m2.group(2)}", "uploader": "Fake Channel", "channel": "Fake Channel",
+            "duration": 180 + n, "live_status": "is_live" if rid.startswith("live") else "not_live",
+        }))
+    sys.exit(0)
+
 if "--print" in args:
     if vid.startswith("priv"):
         print(f"ERROR: [youtube] {vid}: Private video. Sign in if you've been granted access to this video", file=sys.stderr)

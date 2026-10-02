@@ -83,6 +83,25 @@ def normalize_url(raw: object) -> str:
     return f"https://www.youtube.com/watch?v={extract_video_id(raw)}"
 
 
+def validate_search_query(value: object) -> str:
+    """1-100 characters, control characters become spaces, whitespace collapsed."""
+    if not isinstance(value, str):
+        raise InvalidUrlError("Please type something to search for.", code="INVALID_QUERY")
+    text = re.sub(r"[\x00-\x1f\x7f\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]", " ", value)
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        raise InvalidUrlError("Please type something to search for.", code="INVALID_QUERY")
+    if len(text) > 100:
+        raise InvalidUrlError("The search text is too long (100 characters at most).", code="INVALID_QUERY")
+    return text
+
+
+def looks_like_url(value: str) -> bool:
+    """True for input that is meant as a link (so it is analysed, not searched)."""
+    v = value.strip().lower()
+    return "://" in v or v.startswith(("www.", "youtube.com", "youtu.be", "m.youtube.com", "music.youtube.com", "//"))
+
+
 def validate_format(value: object) -> str:
     value = value.strip().lower() if isinstance(value, str) else ""
     if value not in FORMATS:

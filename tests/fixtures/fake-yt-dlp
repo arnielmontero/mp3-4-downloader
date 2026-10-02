@@ -36,6 +36,26 @@ $arg = static function (string $name) use ($args): ?string {
     return $i === false ? null : ($args[$i + 1] ?? null);
 };
 
+// ------------------------------------------------------------------ search ("ytsearchN:query")
+if (in_array('--flat-playlist', $args, true)) {
+    if (preg_match('/^ytsearch(\d+):(.*)$/s', $url, $sm) !== 1) {
+        fwrite(STDERR, "ERROR: unsupported URL\n");
+        exit(1);
+    }
+    if (str_contains($sm[2], 'failsearch')) {
+        fwrite(STDERR, "ERROR: Unable to download webpage: <urlopen error [Errno -3] Temporary failure in name resolution>\n");
+        exit(1);
+    }
+    $ids = str_contains($sm[2], 'nothingfound') ? [] : ['okvideo0001', 'okvideo0002', 'okvideo0003', 'slowvideo01', 'livevideo01'];
+    foreach (array_slice($ids, 0, (int) $sm[1]) as $n => $rid) {
+        echo 'YTDS ' . json_encode([
+            'id' => $rid, 'title' => 'Result ' . ($n + 1) . ' for ' . $sm[2], 'uploader' => 'Fake Channel', 'channel' => 'Fake Channel',
+            'duration' => 180 + $n, 'live_status' => str_starts_with($rid, 'live') ? 'is_live' : 'not_live',
+        ]) . "\n";
+    }
+    exit(0);
+}
+
 $isInfo = in_array('--print', $args, true);
 
 // ------------------------------------------------------------------ analysis

@@ -15,6 +15,7 @@ use App\Services\HistoryService;
 use App\Services\JobService;
 use App\Services\ProcessService;
 use App\Services\RateLimitService;
+use App\Services\SearchService;
 use App\Services\SecurityService;
 use App\Services\VideoInfoService;
 use App\Support\Logger;
@@ -81,6 +82,11 @@ final class Container
     public function videoInfo(): VideoInfoService
     {
         return $this->instances[VideoInfoService::class] ??= new VideoInfoService($this->config, $this->security(), $this->media(), $this->logger());
+    }
+
+    public function search(): SearchService
+    {
+        return $this->instances[SearchService::class] ??= new SearchService($this->security(), $this->media(), $this->logger());
     }
 
     public function downloads(): DownloadService
