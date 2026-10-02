@@ -77,6 +77,8 @@ class YouTubeService:
                 produced = self.engine.download_mp3(url, bitrate, scratch, job_id, on_progress)
             else:
                 produced = self.engine.download_mp4(url, quality, scratch, job_id, on_progress)
+            # never hand out a file that is not fully playable (container, streams, length, full decode)
+            self.engine.verify(produced, fmt, info.duration, job_id, on_progress)
             base = file_service.sanitize_filename(info.title, info.video_id)
             target = file_service.unique_path(output_dir, base, fmt)
             try:

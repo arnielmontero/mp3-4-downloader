@@ -234,7 +234,7 @@ def test_search_returns_downloadable_results_without_live_streams(service):
     assert [r.video_id for r in results] == ["okvideo0001", "okvideo0002", "okvideo0003", "slowvideo01"]
     first = results[0]
     assert first.title == "Result 1 for never gonna" and first.uploader == "Fake Channel"
-    assert first.duration_formatted == "3:00"
+    assert first.duration_formatted == "0:30"
     assert first.thumbnail == "https://i.ytimg.com/vi/okvideo0001/mqdefault.jpg"
     assert first.webpage_url == "https://www.youtube.com/watch?v=okvideo0001"
 

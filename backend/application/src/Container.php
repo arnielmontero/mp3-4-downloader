@@ -13,6 +13,7 @@ use App\Services\FileService;
 use App\Services\HealthService;
 use App\Services\HistoryService;
 use App\Services\JobService;
+use App\Services\MediaVerifier;
 use App\Services\ProcessService;
 use App\Services\RateLimitService;
 use App\Services\SearchService;
@@ -67,6 +68,11 @@ final class Container
     public function processes(): ProcessService
     {
         return $this->instances[ProcessService::class] ??= new ProcessService();
+    }
+
+    public function verifier(): MediaVerifier
+    {
+        return $this->instances[MediaVerifier::class] ??= new MediaVerifier($this->config, $this->processes());
     }
 
     public function rateLimit(): RateLimitService
@@ -125,6 +131,6 @@ final class Container
 
     public function worker(): Worker
     {
-        return new Worker($this->config, $this->jobs(), $this->files(), $this->media(), $this->cleanup(), $this->logger());
+        return new Worker($this->config, $this->jobs(), $this->files(), $this->media(), $this->cleanup(), $this->logger(), $this->verifier());
     }
 }

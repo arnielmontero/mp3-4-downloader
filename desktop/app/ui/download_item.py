@@ -124,7 +124,7 @@ class DownloadItem(QFrame):
     def _on_progress(self, p: Progress) -> None:
         if self._cancelling or self.state != self.RUNNING:
             return
-        self.status_label.setText({"analyzing": "Checking the video...", "processing": "Processing media...", "finished": "Finishing..."}.get(p.stage, "Downloading..."))
+        self.status_label.setText({"analyzing": "Checking the video...", "processing": "Processing media...", "verifying": "Verifying the file plays correctly...", "finished": "Finishing..."}.get(p.stage, "Downloading..."))
         if p.indeterminate or p.percent is None:
             self.progress_bar.setRange(0, 0)  # honest busy indicator, never a fake percentage
         else:

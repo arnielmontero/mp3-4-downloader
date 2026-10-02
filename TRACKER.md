@@ -75,3 +75,14 @@ Only items that were implemented **and** tested are ticked.
   progress, cancel one of two, restart persistence), installer rebuilt.
 - Bug found by the new tests: `ProcessService::run()` never drained stderr, so error classification of one-shot commands saw an empty message
   (fixed). Per-row format choice on desktop is two radio buttons (a combo box cannot be driven reliably through UI Automation / screen readers).
+
+## Playability verification (release 1.1.1)
+- Every MP3/MP4 is verified (ffprobe structure + announced length, then a full FFmpeg decode whose decoded length must reach the announced length)
+  before delivery, on both web (worker stage, non-blocking) and desktop. Damaged files are discarded with PROCESSING_FAILED.
+- Test evidence: PHPUnit 200 (damaged cases: truncated mp4/mp3, garbage, corrupted payload, too short -> rejected; good files decode clean);
+  e2e 41 (incl. TestPlayability); desktop pytest 167 (7 damaged cases + decode of delivered files + cancel during verification);
+  real YouTube: web MP4/MP3 and 4 searched MP3s verified OK, desktop MP4 360p/best + MP3 incl. a 10-minute video verified OK (no false rejections);
+  packaged EXE UI automation 21/21.
+- Finding: a truncated MP3 passed ffprobe and a plain decode (its Xing header still promised the full length); only comparing the decoded length with
+  the announced length catches it - that check was added after the test failed.
+- One real download failed once with YouTube HTTP 403 (unrelated to verification, the retry succeeded); this can happen when YouTube throttles.

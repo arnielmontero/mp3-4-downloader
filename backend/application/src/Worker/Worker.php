@@ -11,6 +11,7 @@ use App\Media\YtDlpDownloader;
 use App\Services\CleanupService;
 use App\Services\FileService;
 use App\Services\JobService;
+use App\Services\MediaVerifier;
 use App\Services\VideoInfoService;
 use App\Support\ApiException;
 use App\Support\Logger;
@@ -47,6 +48,7 @@ final class Worker
         private MediaDownloader $media,
         private CleanupService $cleanup,
         private Logger $logger,
+        private MediaVerifier $verifier,
     ) {
     }
 
@@ -165,6 +167,10 @@ final class Worker
         }
         if (!empty($current['cancel_requested'])) {
             $this->beginStop($aj, 'user');
+            return;
+        }
+        if ($aj->stage === ActiveJob::VERIFY) {
+            $this->advanceVerify($aj);
             return;
         }
         $task = $aj->task;
@@ -296,6 +302,103 @@ final class Worker
             return;
         }
 
+        $this->beginVerify($aj, $source);
+    }
+
+    /** Step 1 of verification: ffprobe. The job shows "processing" while the file is being checked. */
+    private function beginVerify(ActiveJob $aj, string $source): void
+    {
+        $aj->stage = ActiveJob::VERIFY;
+        $aj->verifyPath = $source;
+        $aj->verifyStep = 'probe';
+        $expected = isset($aj->info['duration']) ? (int) $aj->info['duration'] : null;
+        $aj->verifyDeadline = microtime(true) + MediaVerifier::decodeTimeout($expected);
+        $this->jobs->update($aj->id, static function (array $j): ?array {
+            if (in_array($j['status'], JobService::TERMINAL, true) || !empty($j['cancel_requested'])) {
+                return null;
+            }
+            $j['status'] = JobService::PROCESSING;
+            $j['progress'] = 100.0;
+            $j['indeterminate'] = true;
+            $j['speed_bps'] = null;
+            $j['eta_seconds'] = null;
+            return $j;
+        });
+        try {
+            // tracked as the job's current "task" so cancel / kill / shutdown handle it like any other process
+            $aj->task = new MediaTask(MediaTask::INFO, $this->verifier->startProbe($source), (string) $aj->job['format']);
+        } catch (\Throwable $e) {
+            $this->logger->error('cannot start verification: ' . $e->getMessage(), ['job_id' => $aj->id, 'op' => 'verify', 'status' => 'error']);
+            $this->failJob($aj, 'PROCESSING_FAILED', MediaVerifier::MESSAGE);
+        }
+    }
+
+    private function advanceVerify(ActiveJob $aj): void
+    {
+        $task = $aj->task;
+        if ($task === null || $aj->verifyPath === null) {
+            return;
+        }
+        foreach ($task->process->readStdout() as $line) {
+            if (strlen($task->infoJson) < 1048576) {
+                $task->infoJson .= $line . "\n";
+            }
+        }
+        $task->process->readStderr();
+        if ($task->process->isRunning()) {
+            if (microtime(true) > $aj->verifyDeadline) {
+                $this->media->kill($task);
+                $this->failJob($aj, 'PROCESSING_FAILED', MediaVerifier::MESSAGE);
+            }
+            return;
+        }
+        foreach ($task->process->readStdout(true) as $line) {
+            $task->infoJson .= $line . "\n";
+        }
+        $task->process->readStderr(true);
+        $exit = $task->process->exitCode();
+        $stderr = $task->process->stderrTail();
+        $out = $task->infoJson;
+        $task->process->close();
+        $format = (string) $aj->job['format'];
+
+        if ($aj->verifyStep === 'probe') {
+            $expected = isset($aj->info['duration']) ? (int) $aj->info['duration'] : null;
+            $problem = $exit !== 0 ? 'ffprobe failed: ' . $stderr : MediaVerifier::checkProbe($out, $format, $expected);
+            if ($problem !== null) {
+                $this->logger->warning('verification failed: ' . $problem, ['job_id' => $aj->id, 'op' => 'verify', 'status' => 'failed', 'error_code' => 'PROCESSING_FAILED']);
+                $this->failJob($aj, 'PROCESSING_FAILED', MediaVerifier::MESSAGE);
+                return;
+            }
+            $aj->verifyStep = 'decode';
+            $aj->verifyReference = $expected !== null && $expected > 0 ? (float) $expected : MediaVerifier::probeDuration($out);
+            try {
+                $aj->task = new MediaTask(MediaTask::INFO, $this->verifier->startDecode($aj->verifyPath), $format);
+            } catch (\Throwable $e) {
+                $this->failJob($aj, 'PROCESSING_FAILED', MediaVerifier::MESSAGE);
+            }
+            return;
+        }
+
+        // decode step: a clean full decode means the file plays from start to end
+        if ($exit !== 0 || trim($stderr) !== '') {
+            $this->logger->warning('verification failed (decode): ' . $stderr, ['job_id' => $aj->id, 'op' => 'verify', 'status' => 'failed', 'error_code' => 'PROCESSING_FAILED']);
+            $this->failJob($aj, 'PROCESSING_FAILED', MediaVerifier::MESSAGE);
+            return;
+        }
+        $problem = MediaVerifier::checkDecode($out, $aj->verifyReference);
+        if ($problem !== null) {
+            $this->logger->warning('verification failed (decoded length): ' . $problem, ['job_id' => $aj->id, 'op' => 'verify', 'status' => 'failed', 'error_code' => 'PROCESSING_FAILED']);
+            $this->failJob($aj, 'PROCESSING_FAILED', MediaVerifier::MESSAGE);
+            return;
+        }
+        $this->completeJob($aj, $aj->verifyPath);
+    }
+
+    private function completeJob(ActiveJob $aj, string $source): void
+    {
+        $format = (string) $aj->job['format'];
+        $started = $aj->startedAt;
         try {
             $destDir = $this->files->jobDownloadDir($aj->id);
             $this->files->ensureDir($destDir);

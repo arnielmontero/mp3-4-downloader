@@ -129,12 +129,15 @@ unlink($partial);
 echo "[Merger] Merging formats\n";
 flush();
 
+// the media length matches what the info announced (30 s, 60 s for slow*), so the verifier's duration check is meaningful;
+// short* ids deliver a valid but too short file
+$dur = str_starts_with($id, 'short') ? 5 : (str_starts_with($id, 'slow') ? 60 : 30);
 $ffmpeg = ['ffmpeg', '-y', '-loglevel', 'error'];
 if ($isMp3) {
     $kbps = rtrim($arg('--audio-quality') ?? '192K', 'K');
-    $cmd = array_merge($ffmpeg, ['-f', 'lavfi', '-i', 'sine=frequency=440:duration=2', '-b:a', $kbps . 'k', '-metadata', 'title=Fake video ' . $id, '-metadata', 'artist=Fake Channel', $final]);
+    $cmd = array_merge($ffmpeg, ['-f', 'lavfi', '-i', "sine=frequency=440:duration=$dur", '-b:a', $kbps . 'k', '-metadata', 'title=Fake video ' . $id, '-metadata', 'artist=Fake Channel', $final]);
 } else {
-    $cmd = array_merge($ffmpeg, ['-f', 'lavfi', '-i', 'testsrc=size=320x240:rate=15:duration=2', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', $final]);
+    $cmd = array_merge($ffmpeg, ['-f', 'lavfi', '-i', "testsrc=size=160x120:rate=5:duration=$dur", '-f', 'lavfi', '-i', "sine=frequency=440:duration=$dur", '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', $final]);
 }
 $p = proc_open($cmd, [2 => ['pipe', 'w']], $pipes);
 $err = stream_get_contents($pipes[2]);
@@ -142,5 +145,20 @@ $code = proc_close($p);
 if ($code !== 0) {
     fwrite(STDERR, "ERROR: Postprocessing: ffmpeg exited: $err\n");
     exit(1);
+}
+// damaged-output scenarios for the playability checks
+if (str_starts_with($id, 'trunc')) {            // cut off in the middle (container intact at the start)
+    $size = (int) filesize($final);
+    $h = fopen($final, 'r+b');
+    ftruncate($h, (int) ($size * 0.6));
+    fclose($h);
+} elseif (str_starts_with($id, 'junk')) {       // not media at all
+    file_put_contents($final, random_bytes(50000));
+} elseif (str_starts_with($id, 'bitrot')) {     // valid headers, corrupted payload in the middle
+    $size = (int) filesize($final);
+    $h = fopen($final, 'r+b');
+    fseek($h, (int) ($size * 0.5));
+    fwrite($h, random_bytes(8000));
+    fclose($h);
 }
 exit(0);

@@ -12,6 +12,7 @@ import json
 import os
 import random
 import re
+import shutil
 import subprocess
 import time
 import unittest
@@ -107,7 +108,7 @@ class TestAvailability(unittest.TestCase):
     def test_04_about_reports_versions(self):
         _, doc, _ = client().json("GET", "/api/about")
         self.assertTrue(doc["success"])
-        self.assertEqual("1.1.0", doc["data"]["version"])
+        self.assertEqual("1.1.1", doc["data"]["version"])
         self.assertEqual("2099.01.01", doc["data"]["yt_dlp_version"])  # fake engine
         self.assertTrue(doc["data"]["ffmpeg_version"])
 
@@ -447,6 +448,41 @@ class TestDownloads(unittest.TestCase):
         self.assertEqual(["completed"] * 3, states)
         self.assertEqual(2, max_active, "MAX_CONCURRENT_DOWNLOADS=2 in the test stack")
         self.assertTrue(saw_queued)
+
+
+class TestPlayability(unittest.TestCase):
+    """Only fully playable files are ever delivered."""
+
+    def test_damaged_or_incomplete_files_fail_and_are_not_downloadable(self):
+        api = client()
+        for vid, fmt in (("truncvideo1", "mp4"), ("truncvideo2", "mp3"), ("junkvideo01", "mp4"), ("bitrotvid01", "mp4"), ("shortvideo1", "mp3")):
+            job = api.wait_for(analyze_and_download(api, vid, fmt), timeout=90)
+            self.assertEqual("failed", job["status"], vid)
+            self.assertEqual("PROCESSING_FAILED", job["error"]["code"], vid)
+            self.assertIn("damaged or incomplete", job["error"]["message"], vid)
+            status, doc, _ = api.json("GET", f"/api/download/{job['job_id']}/file")
+            self.assertEqual(409, status, vid)
+            self.assertNotIn(job["job_id"], temp_dirs())
+        items = api.json("GET", "/api/download/history")[1]["data"]["items"]
+        self.assertTrue(all(not i["file_available"] for i in items))
+
+    def test_delivered_files_pass_an_independent_full_decode(self):
+        api = client()
+        for fmt in ("mp4", "mp3"):
+            job = api.wait_for(analyze_and_download(api, "okplayable1", fmt), timeout=90)
+            self.assertEqual("completed", job["status"], job)
+            body = api.request("GET", f"/api/download/{job['job_id']}/file")[2]
+            if shutil.which("ffmpeg"):  # host FFmpeg available: decode exactly what the browser would receive
+                import tempfile
+
+                with tempfile.NamedTemporaryFile(suffix="." + fmt, delete=False) as fh:
+                    fh.write(body)
+                try:
+                    proc = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-xerror", "-i", fh.name, "-f", "null", "-"], capture_output=True)
+                finally:
+                    os.unlink(fh.name)
+                self.assertEqual(0, proc.returncode, proc.stderr.decode(errors="replace")[:300])
+                self.assertEqual(b"", proc.stderr.strip())
 
 
 class TestCancellation(unittest.TestCase):

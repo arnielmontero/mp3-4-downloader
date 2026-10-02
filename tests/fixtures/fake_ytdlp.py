@@ -45,7 +45,7 @@ if "--flat-playlist" in args:  # search: "ytsearchN:query"
     for n, rid in enumerate(ids[: int(m2.group(1))]):
         print("YTDS " + json.dumps({
             "id": rid, "title": f"Result {n + 1} for {m2.group(2)}", "uploader": "Fake Channel", "channel": "Fake Channel",
-            "duration": 180 + n, "live_status": "is_live" if rid.startswith("live") else "not_live",
+            "duration": 30, "live_status": "is_live" if rid.startswith("live") else "not_live",
         }))
     sys.exit(0)
 
@@ -100,15 +100,31 @@ os.unlink(partial)
 print("[Merger] Merging formats", flush=True)
 
 ffmpeg = os.environ.get("FFMPEG_EXE") or shutil.which("ffmpeg") or "ffmpeg"
+# the media length matches what the info announced (30 s, 60 s for slow*); short* delivers a valid but too short file
+dur = 5 if vid.startswith("short") else (60 if vid.startswith("slow") else 30)
 if is_mp3:
     kbps = (arg("--audio-quality") or "192K").rstrip("K")
-    cmd = [ffmpeg, "-y", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-b:a", f"{kbps}k",
+    cmd = [ffmpeg, "-y", "-loglevel", "error", "-f", "lavfi", "-i", f"sine=frequency=440:duration={dur}", "-b:a", f"{kbps}k",
            "-metadata", f"title=Fake video {vid}", "-metadata", "artist=Fake Channel", final]
 else:
-    cmd = [ffmpeg, "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=15:duration=2", "-f", "lavfi",
-           "-i", "sine=frequency=440:duration=2", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", final]
+    cmd = [ffmpeg, "-y", "-loglevel", "error", "-f", "lavfi", "-i", f"testsrc=size=160x120:rate=5:duration={dur}", "-f", "lavfi",
+           "-i", f"sine=frequency=440:duration={dur}", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", final]
 result = subprocess.run(cmd, capture_output=True, text=True)
 if result.returncode != 0:
     print("ERROR: Postprocessing: ffmpeg exited:", result.stderr, file=sys.stderr)
     sys.exit(1)
+
+# damaged-output scenarios for the playability checks
+if vid.startswith("trunc"):  # cut off in the middle
+    size = os.path.getsize(final)
+    with open(final, "r+b") as fh:
+        fh.truncate(int(size * 0.6))
+elif vid.startswith("junk"):  # not media at all
+    with open(final, "wb") as fh:
+        fh.write(os.urandom(50000))
+elif vid.startswith("bitrot"):  # valid headers, corrupted payload in the middle
+    size = os.path.getsize(final)
+    with open(final, "r+b") as fh:
+        fh.seek(int(size * 0.5))
+        fh.write(os.urandom(8000))
 sys.exit(0)

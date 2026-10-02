@@ -222,6 +222,45 @@ final class WorkerIntegrationTest extends TestCase
         $this->assertFileExists($path, 'completed files are preserved');
     }
 
+    /** @return array<string,array{string,string}> */
+    public static function damagedOutputs(): array
+    {
+        return [
+            'truncated mp4' => ['truncvideo1', 'mp4'],
+            'truncated mp3' => ['truncvideo2', 'mp3'],
+            'garbage instead of media' => ['junkvideo01', 'mp4'],
+            'garbage mp3' => ['junkvideo02', 'mp3'],
+            'corrupted payload' => ['bitrotvid01', 'mp4'],
+            'too short for the announced length' => ['shortvideo1', 'mp3'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('damagedOutputs')]
+    public function testDamagedOrIncompleteFilesNeverReachTheUser(string $videoId, string $format): void
+    {
+        $id = $this->create($videoId, $format);
+        $job = $this->waitTerminal($id, 90);
+        $this->assertSame('failed', $job['status'], 'a file that is not fully playable must not be offered');
+        $this->assertSame('PROCESSING_FAILED', $job['error']['code']);
+        $this->assertSame(\App\Services\MediaVerifier::MESSAGE, $job['error']['message']);
+        $this->assertSame([], glob($this->storage . '/downloads/' . $id . '/*') ?: [], 'nothing stored for the user');
+        $this->assertDirectoryDoesNotExist($this->storage . '/temp/' . $id);
+        $this->expectException(\App\Support\ApiException::class);
+        $this->c->downloads()->fileFor($id);
+    }
+
+    public function testEveryCompletedFileDecodesCleanly(): void
+    {
+        foreach (['mp4', 'mp3'] as $format) {
+            $id = $this->create('okplayable' . ($format === 'mp4' ? '1' : '2'), $format);
+            $job = $this->waitTerminal($id, 90);
+            $this->assertSame('completed', $job['status'], json_encode($job['error']));
+            $file = $this->c->downloads()->fileFor($id);
+            $out = shell_exec('ffmpeg -nostdin -v error -xerror -i ' . escapeshellarg($file['path']) . ' -f null - 2>&1');
+            $this->assertSame('', trim((string) $out), "a full decode of the delivered $format has no errors");
+        }
+    }
+
     public function testFailedDownloadIsMarkedFailedWithFriendlyError(): void
     {
         $id = $this->create('failvideo01');

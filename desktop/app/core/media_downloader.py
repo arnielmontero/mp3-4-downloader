@@ -147,6 +147,10 @@ class MediaDownloader(ABC):
         """Download audio, convert to .mp3 at `bitrate` kbps, return the file."""
 
     @abstractmethod
+    def verify(self, path: Path, fmt: str, expected_duration: int | None, job_id: str, on_progress: ProgressCallback | None = None) -> None:
+        """Prove the finished file is playable (container, streams, announced length, full decode); raise ProcessingFailedError otherwise."""
+
+    @abstractmethod
     def cancel(self, job_id: str) -> None:
         """Stop the job's processes (yt-dlp and any FFmpeg it started)."""
 
@@ -399,8 +403,71 @@ class YtDlpDownloader(MediaDownloader):
         with self._lock:
             self._cancelled.add(job_id)
         # the job runs up to two processes in sequence (analysis, then download)
-        for pid_key in (job_id, job_id + ":info"):
+        for pid_key in (job_id, job_id + ":info", job_id + ":verify"):
             self._processes.terminate(pid_key)
+
+    def _ffprobe_exe(self) -> Path | None:
+        ffmpeg = self._ffmpeg_exe()
+        if ffmpeg is not None:
+            sibling = ffmpeg.with_name(paths.exe_name("ffprobe"))
+            if sibling.is_file():
+                return sibling
+        return paths.find_binary("ffprobe")
+
+    def _run_collect(self, key: str, cmd: list[str], timeout: float) -> tuple[int, list[str]]:
+        """Run a short-lived tool through the ProcessManager (so Cancel can kill it); returns (exit code, output lines)."""
+        proc = self._processes.start(key, cmd)
+        out: list[str] = []
+        timed_out = threading.Event()
+        done = threading.Event()
+
+        def watchdog() -> None:
+            if not done.wait(timeout):
+                timed_out.set()
+                self._processes.terminate(key)
+
+        threading.Thread(target=watchdog, daemon=True).start()
+        try:
+            assert proc.stdout is not None
+            for raw in proc.stdout:
+                out.append(raw.decode("utf-8", "replace").rstrip("\r\n"))
+            proc.wait()
+        finally:
+            done.set()
+            self._processes.release(key)
+        if timed_out.is_set():
+            return -1, out
+        return int(proc.returncode), out
+
+    def verify(self, path: Path, fmt: str, expected_duration: int | None, job_id: str, on_progress: ProgressCallback | None = None) -> None:
+        self._set_progress(job_id, Progress(stage="verifying", percent=100.0, indeterminate=True), on_progress)
+        ffmpeg, ffprobe = self._ffmpeg_exe(), self._ffprobe_exe()
+        if ffmpeg is None or ffprobe is None:
+            raise EngineMissingError(MSG_ENGINE)
+        key = job_id + ":verify"
+
+        code, lines = self._run_collect(key, [str(ffprobe), "-v", "error", "-show_entries", "format=format_name,duration:stream=codec_type,codec_name", "-of", "json", "--", str(path)], 120)
+        if self._is_cancelled(job_id):
+            raise CancelledError("Cancelled.")
+        probe_json = "\n".join(lines)
+        problem = f"ffprobe failed: {probe_json[:300]}" if code != 0 else check_probe(probe_json, fmt, expected_duration)
+        if problem:
+            log.warning("verification failed: %s", problem, extra={"job_id": job_id, "op": "verify", "status": "failed", "error_code": "PROCESSING_FAILED"})
+            raise ProcessingFailedError(MSG_DAMAGED, detail=problem)
+
+        reference = float(expected_duration) if expected_duration else probe_duration(probe_json)
+        code, lines = self._run_collect(key, [str(ffmpeg), "-nostdin", "-v", "error", "-xerror", "-progress", "pipe:1", "-nostats", "-i", str(path), "-f", "null", "-"], decode_timeout(expected_duration))
+        if self._is_cancelled(job_id):
+            raise CancelledError("Cancelled.")
+        errors = [ln for ln in lines if ln.strip() and not re.fullmatch(r"[A-Za-z0-9_]+=.*", ln)]
+        if code != 0 or errors:
+            problem = "decode errors: " + " | ".join(errors[:3])
+        else:
+            problem = check_decode("\n".join(lines), reference)
+        if problem:
+            log.warning("verification failed: %s", problem, extra={"job_id": job_id, "op": "verify", "status": "failed", "error_code": "PROCESSING_FAILED"})
+            raise ProcessingFailedError(MSG_DAMAGED, detail=problem)
+        self._set_progress(job_id, Progress(stage="finished", percent=100.0), on_progress)
 
     def get_progress(self, job_id: str) -> Progress | None:
         with self._lock:
@@ -570,6 +637,62 @@ def normalize_info(info: dict, formats: list) -> VideoInfo:
         source_audio_bitrate=int(round(max_abr)) if max_abr > 0 else None,
         filesize=int(size) if isinstance(size, (int, float)) else None,
     )
+
+
+MSG_DAMAGED = "The downloaded file is damaged or incomplete and was discarded. Please try again."
+
+
+def check_probe(probe_json: str, fmt: str, expected_seconds: int | None) -> str | None:
+    """None when ffprobe's view of the file is right, else a technical reason (log only)."""
+    try:
+        data = json.loads(probe_json)
+        fmt_info = data["format"]
+    except (ValueError, KeyError, TypeError):
+        return "ffprobe could not read the file"
+    name = str(fmt_info.get("format_name", ""))
+    try:
+        duration = float(fmt_info.get("duration", 0))
+    except (TypeError, ValueError):
+        duration = 0.0
+    types = {s.get("codec_type") for s in data.get("streams", []) if isinstance(s, dict) and s.get("codec_name")}
+    if fmt == "mp3":
+        if "mp3" not in name:
+            return f"container is {name!r}, not MP3"
+        if "audio" not in types:
+            return "no audio stream"
+    else:
+        if "mp4" not in name:
+            return f"container is {name!r}, not MP4"
+        if "video" not in types:
+            return "no video stream"
+    if duration <= 0:
+        return "zero duration"
+    if expected_seconds and abs(duration - expected_seconds) > max(3.0, expected_seconds * 0.05):
+        return f"duration {duration:.1f}s differs from the expected {expected_seconds}s"
+    return None
+
+
+def probe_duration(probe_json: str) -> float:
+    try:
+        return float(json.loads(probe_json)["format"]["duration"])
+    except (ValueError, KeyError, TypeError):
+        return 0.0
+
+
+def check_decode(progress_output: str, reference_seconds: float) -> str | None:
+    """Compare the media length the decoder really produced (ffmpeg -progress out_time_us) with the reference length.
+    Catches truncated files whose headers still promise the full length."""
+    values = re.findall(r"^out_time_(?:us|ms)=(\d+)$", progress_output, re.M)
+    if not values:
+        return "decoder reported no progress"
+    decoded = int(values[-1]) / 1_000_000
+    if reference_seconds > 0 and decoded < reference_seconds - max(3.0, reference_seconds * 0.05):
+        return f"only {decoded:.1f}s of {reference_seconds:.1f}s could be decoded"
+    return None
+
+
+def decode_timeout(expected_seconds: int | None) -> float:
+    return float(max(300, int((expected_seconds or 0) * 2) + 120))
 
 
 def classify_error(stderr: str) -> AppError:

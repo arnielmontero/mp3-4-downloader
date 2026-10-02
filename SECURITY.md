@@ -59,6 +59,11 @@ Each job runs in its own process group/session (`setsid` on Linux, `taskkill /T`
 kills stragglers after `KILL_GRACE_SECONDS`, removes temp data and re-queues interrupted jobs. At start-up stale "running" jobs are
 re-queued (max `MAX_JOB_ATTEMPTS`) or failed and orphaned temp directories removed. The desktop app kills all children on exit.
 
+## Output verification
+Every finished MP3/MP4 is checked with ffprobe (container, expected stream type, length vs. the announced duration, 5 percent / 3 s tolerance) and a full
+FFmpeg decode (`-xerror`, decoded length must reach the announced length) before it is moved to storage or the output folder. The checks run as
+separate, cancellable processes with their own timeout; failures delete the file and are reported as `PROCESSING_FAILED`.
+
 ## Cleanup
 Scheduled (every `CLEANUP_INTERVAL_SECONDS`) and on demand (`php bin/cleanup.php`): temp directories of finished/abandoned jobs, failed/cancelled
 metadata older than `DOWNLOAD_RETENTION_HOURS` (24), orphaned download folders, old logs, rate-limit and info-cache files. Completed files are kept

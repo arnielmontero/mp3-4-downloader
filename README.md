@@ -24,6 +24,11 @@ A self-hosted downloader for single YouTube videos with two front ends that shar
 * MP4 prefers H.264/AAC for compatibility; separate streams are merged by FFmpeg into `.mp4`.
 * MP3 is extracted/converted by FFmpeg with title/artist metadata (only what YouTube provides). The UI warns when the
   chosen bitrate exceeds the source audio — conversion cannot improve quality.
+* **Playability guarantee:** before a file is offered, it is verified: ffprobe checks the container and streams (MP4 = video track,
+  MP3 = audio track) and that the length matches what YouTube announced, then FFmpeg decodes the whole file and the decoded length must
+  reach the announced length (this catches truncated files whose headers still promise the full length). A file that fails any step is
+  discarded and the job fails with "The downloaded file is damaged or incomplete..." - nothing broken ever reaches you. The UI shows
+  "Verifying..." while this runs.
 * Safe, unique file names (`video.mp4`, `video (1).mp4`, …), never overwrites.
 * Web: job queue (`MAX_CONCURRENT_DOWNLOADS`), rate limits, size/duration limits, history (per browser), scheduled cleanup,
   crash recovery, graceful shutdown. Desktop: output folder, settings in `%APPDATA%\YouTubeDownloader\config.json`, about box.

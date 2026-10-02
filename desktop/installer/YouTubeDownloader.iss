@@ -1,7 +1,7 @@
 ; Inno Setup script - builds installer\YouTubeDownloader-Setup.exe from dist\ (EXE + bin\).
 ; Build:  desktop\installer\build_installer.bat
 #define AppName "YouTube Downloader"
-#define AppVersion "1.1.0"
+#define AppVersion "1.1.1"
 #define AppExe "YouTubeDownloader.exe"
 
 [Setup]

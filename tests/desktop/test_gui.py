@@ -50,7 +50,7 @@ def test_search_shows_results_with_a_download_button_each(window, wait):
     assert len(window.rows) == 4, "5 hits from the engine, the live stream is filtered out"
     titles = [r.title.text() for r in window.rows]
     assert titles[0] == "Result 1 for never gonna"
-    assert window.rows[0].meta.text() == "Fake Channel · 3:00"
+    assert window.rows[0].meta.text() == "Fake Channel · 0:30"
     assert window.results_info.text() == f"{len(window.rows)} results"
     for row in window.rows:
         assert row.download_button.text() == "Download" and row.download_button.isEnabled()
